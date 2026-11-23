@@ -15,7 +15,11 @@ import (
 const searchPingInterval = 5
 
 var searchHandler = withUser(func(w http.ResponseWriter, r *http.Request, d *data) (int, error) {
-	response := make(chan map[string]interface{})
+	w.Header().Set("Content-Type", "application/x-ndjson; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-cache, no-transform")
+	w.Header().Set("X-Accel-Buffering", "no")
+
+	response := make(chan map[string]interface{}, 256)
 	ctx, cancel := context.WithCancelCause(r.Context())
 	var wg sync.WaitGroup
 	wg.Add(1)
@@ -33,9 +37,17 @@ var searchHandler = withUser(func(w http.ResponseWriter, r *http.Request, d *dat
 					return
 				}
 				infoBytes, err = json.Marshal(info)
+				if !timeout.Stop() {
+					select {
+					case <-timeout.C:
+					default:
+					}
+				}
+				timeout.Reset(searchPingInterval * time.Second)
 			case <-timeout.C:
 				// Send a heartbeat packet
 				infoBytes = nil
+				timeout.Reset(searchPingInterval * time.Second)
 			case <-ctx.Done():
 				return
 			}
@@ -43,7 +55,9 @@ var searchHandler = withUser(func(w http.ResponseWriter, r *http.Request, d *dat
 				cancel(err)
 				return
 			}
-			_, err = w.Write(infoBytes)
+			if len(infoBytes) > 0 {
+				_, err = w.Write(infoBytes)
+			}
 			if err == nil {
 				_, err = w.Write([]byte("\n"))
 			}
@@ -52,7 +66,9 @@ var searchHandler = withUser(func(w http.ResponseWriter, r *http.Request, d *dat
 				return
 			}
 			if flusher, ok := w.(http.Flusher); ok {
-				flusher.Flush()
+				if len(response) == 0 {
+					flusher.Flush()
+				}
 			}
 		}
 	}()
@@ -62,8 +78,9 @@ var searchHandler = withUser(func(w http.ResponseWriter, r *http.Request, d *dat
 		select {
 		case <-ctx.Done():
 		case response <- map[string]interface{}{
-			"dir":  f.IsDir(),
-			"path": path,
+			"dir":   f.IsDir(),
+			"isDir": f.IsDir(),
+			"path":  path,
 		}:
 		}
 		return context.Cause(ctx)

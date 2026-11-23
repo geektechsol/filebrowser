@@ -40,7 +40,7 @@ export default async function search(
           if (line) {
             const item = JSON.parse(line) as ResourceItem;
             item.url = `/files${base}` + url.encodePath(item.path);
-            if (item.isDir) {
+            if (item.isDir || (item as any).dir) {
               item.url += "/";
             }
             callback(item);
@@ -56,7 +56,7 @@ export default async function search(
         if (line) {
           const item = JSON.parse(line) as ResourceItem;
           item.url = `/files${base}` + url.encodePath(item.path);
-          if (item.isDir) {
+          if (item.isDir || (item as any).dir) {
             item.url += "/";
           }
           callback(item);

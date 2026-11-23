@@ -236,9 +236,31 @@ const submit = async (event: Event) => {
     abortLastSearch();
     searchAbortController = new AbortController();
     results.value = [];
-    await search(path, prompt.value, searchAbortController.signal, (item) =>
-      results.value.push(item)
-    );
+    let buffer: any[] = [];
+    let flushTimer: ReturnType<typeof setTimeout> | null = null;
+    const flushBuffer = () => {
+      if (buffer.length > 0) {
+        results.value.push(...buffer);
+        buffer = [];
+      }
+    };
+    await search(path, prompt.value, searchAbortController.signal, (item) => {
+      buffer.push(item);
+      if (buffer.length >= 50 || !flushTimer) {
+        flushBuffer();
+        if (flushTimer) {
+          clearTimeout(flushTimer);
+        }
+        flushTimer = setTimeout(() => {
+          flushBuffer();
+          flushTimer = null;
+        }, 50);
+      }
+    });
+    if (flushTimer) {
+      clearTimeout(flushTimer);
+    }
+    flushBuffer();
   } catch (error: any) {
     if (error instanceof StatusError && error.is_canceled) {
       return;
